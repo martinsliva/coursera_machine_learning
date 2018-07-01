@@ -1,0 +1,139 @@
+---
+title: "Coursera Machine Learning Project"
+author: "Martin Slíva"
+date: "2018 M06 30"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Synopsis
+
+This report is part of Coursera Machine Learning course.
+The subject of the report is to analyse given datatset and find model which recognize bad training behaviour
+Result of the project is stored in file result.csv.
+
+
+
+### Project background
+
+Citation from Coursera project:
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+
+
+## Getting and cleaning data
+
+After loading data columns with no data (full of NA) was omitted. For next analysis also columns with DIV/0! was omitted - this data cleaning might be aggressive so in case of bad results during validation we can return to this point and solve problem with missing data.
+
+
+```{r}
+library(caret)
+
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv","pml-training.csv")
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv","pml-testing.csv")
+
+training<-read.csv("pml-training.csv")
+testing<-read.csv("pml-testing.csv")
+
+pokus <- function(x) sum(is.na(x))
+col.na <- apply(training, 2, pokus) ### columns full of NA - not used in training, omitted in testing
+training2 <- (training[,(!col.na==19216)])
+testing2<- (testing[,(!col.na==19216)])
+
+pokus2 <- function(x)sum(x=="#DIV/0!")
+col.div0 <- apply(training2, 2, pokus2) ### columns with DIV0 text - not used in training, omitted in testing
+training3 <- training2[,(col.div0==0)]
+testing3 <- testing2[,(col.div0==0)]
+
+
+```
+
+
+
+
+## Exploratory analysis
+
+We can see that some of collected data does not bring us any value for analysis and future use. Those data are stored in the first seven columns and we will not use it.
+
+Next we can search for highly correlated data (threshold set to .95). We can found two pairs and one tripple highly correlated. We will use only one column from all three groups (chosen randomly).
+
+```{r}
+
+training4 <- training3[,-c(1,2,3,4,5,6,7)] ### Collumns with order and time stamp, name of user, number of time window - not used in analysis , omited in testing
+testing4 <- testing3[,-c(1,2,3,4,5,6,7)]
+
+### Finding highly correlated columns and using only one representant of highly correlated groups of columns
+cortab <- abs(cor(training4[, -53]))
+diag(cortab) <- 0
+which(cortab>0.95,arr.ind = T)
+training5 <- training4[,-c(4,8,10,32)]
+testing5 <- testing4[,-c(4,8,10,32)]
+
+```
+
+
+
+
+## Analysis
+The first steps is to divide training data into training set and validation set in ratio 80/20.
+
+
+```{r}
+#### Preparing training and Validation set
+set.seed(123)
+TrainingIndex <- createDataPartition(training5$classe, p=.8, list = FALSE, times = 1)
+training_final<- training5[TrainingIndex,]
+validation <- training5[-TrainingIndex,]
+
+```
+
+For model training lets use Random Forest and Linear Discriminant Analysis. Than we can compare Accuracy on validation data subset.
+
+```{r}
+#### Training
+
+fit_rf <- train(classe~., data=training_final, method="rf") ### Random Forest
+fit_lda <- train(classe~., data=training_final, method="lda") ### Linear Discriminant Analysis
+
+### Validation
+
+pred_rf <- predict(fit_rf, newdata = validation)
+pred_lda <- predict(fit_lda, newdata = validation)
+
+#### Comparing method
+confusionMatrix(pred_rf,validation$classe)
+confusionMatrix(pred_lda,validation$classe)
+
+
+```
+
+
+As we can see using the Random Forest give us much better Accurary (over 99%).
+We will us it for Testing.
+
+## Result
+
+The result of the testing can be seen bellow and it is also stored in result.csv file.
+
+```{r}
+### Testing
+
+print(pred_test <- predict(fit_rf, newdata=testing5))
+
+write.csv(file="result.csv", pred_test)
+
+```
+
+
+
+## References
+
+Data for this report comes from http://groupware.les.inf.puc-rio.br/har.
+
+
+Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
+
